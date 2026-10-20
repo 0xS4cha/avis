@@ -1,26 +1,36 @@
 local d3gl = require("d3gl")
+local config = require("src.config.simulation")
+local bird = require("src.bird")
 local Colors = d3gl.Colors
-
+local random_range = d3gl.mathx.random_range
 local BACKGROUND = d3gl.hex("#0b1020")
 
 local app = {}
 
+local simulation = {
+    boids = {}
+}
+
 function app.load()
+    for i = 1, config.boids do
+        local x = random_range(0, d3gl.width)
+        local y = random_range(0, d3gl.height)
+        simulation.boids[#simulation.boids + 1] = bird(i, d3gl.vec2(x, y), 0.0, simulation.boids)
+    end
 end
 
 function app.update(dt)
+    for i = 1, #simulation.boids do
+        simulation.boids[i]:update()
+    end
 end
 
 function app.draw()
     d3gl.clear(BACKGROUND)
     d3gl.draw_text(8, 8, "AVIS", Colors.WHITE, 2)
     d3gl.draw_fps(8, d3gl.height - 12)
-    for i = 1, 10 do
-        local x = d3gl.random_range(0, d3gl.width)
-        local y = d3gl.random_range(0, d3gl.height)
-        local r = d3gl.random_range(5, 20)
-        local c = d3gl.hsv(d3gl.random_range(0, 360), 1, 1)
-        d3gl.draw_circle(x, y, r, c)
+    for i = 1, #simulation.boids do
+        simulation.boids[i]:draw()
     end
 end
 
