@@ -1,12 +1,16 @@
 return {
-    boids = 20,
+    boids = 70,
+    vision_angle = math.pi * 3 / 2,
     separation = {
-        radius = 5
+        strength = 0.08,
+        radius = 20
     },
     alignment = {
-        radius = 10
+        strength = 0.04,
+        radius = 50
     },
     cohesion = {
-        radius = 15
+        strength = 0.01,
+        radius = 80
     }
 }

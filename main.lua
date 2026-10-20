@@ -15,7 +15,7 @@ function app.load()
     for i = 1, config.boids do
         local x = random_range(0, d3gl.width)
         local y = random_range(0, d3gl.height)
-        simulation.boids[#simulation.boids + 1] = bird(i, d3gl.vec2(x, y), 0.0, simulation.boids)
+        simulation.boids[#simulation.boids + 1] = bird(i, d3gl.vec2(x, y), math.pi / 4, simulation.boids)
     end
 end
 
@@ -27,8 +27,6 @@ end
 
 function app.draw()
     d3gl.clear(BACKGROUND)
-    d3gl.draw_text(8, 8, "AVIS", Colors.WHITE, 2)
-    d3gl.draw_fps(8, d3gl.height - 12)
     for i = 1, #simulation.boids do
         simulation.boids[i]:draw()
     end
