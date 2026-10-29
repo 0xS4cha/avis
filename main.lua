@@ -1,34 +1,52 @@
+
 local d3gl = require("d3gl")
 local config = require("src.config.simulation")
 local bird = require("src.bird")
-local Colors = d3gl.Colors
+
 local random_range = d3gl.mathx.random_range
+local vec2 = d3gl.vec2
+local clear = d3gl.clear
+
 local BACKGROUND = d3gl.hex("#0b1020")
 
 local app = {}
-
-local simulation = {
-    boids = {}
-}
+local simulation = { boids = {} }
 
 function app.load()
+    local boids = simulation.boids
+
+	clear(BACKGROUND)
+
     for i = 1, config.boids do
         local x = random_range(0, d3gl.width)
         local y = random_range(0, d3gl.height)
-        simulation.boids[#simulation.boids + 1] = bird(i, d3gl.vec2(x, y), math.pi / 4, simulation.boids)
+
+        boids[i] = bird(
+            i,
+            vec2(x, y),
+            math.pi / 4,
+            boids
+        )
     end
 end
 
 function app.update(dt)
-    for i = 1, #simulation.boids do
-        simulation.boids[i]:update()
+    local boids = simulation.boids
+    local count = #boids
+
+    for i = 1, count do
+        boids[i]:snapshot()
+    end
+
+    for i = 1, count do
+        boids[i]:update(dt)
     end
 end
 
 function app.draw()
-    d3gl.clear(BACKGROUND)
-    for i = 1, #simulation.boids do
-        simulation.boids[i]:draw()
+    local boids = simulation.boids
+    for i = 1, #boids do
+        boids[i]:draw()
     end
 end
 

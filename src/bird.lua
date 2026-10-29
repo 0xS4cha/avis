@@ -1,119 +1,203 @@
+
 local d3gl = require("d3gl")
 local config = require("src.config.simulation")
 local Colors = d3gl.Colors
 
 local bird = d3gl.class()
 
+local cos = math.cos
+local sin = math.sin
+local atan = math.atan
+local pi = math.pi
+
+local TWO_PI = 2 * pi
+local HALF_PI = pi * 0.5
+
+local MOVE_SPEED = 60
+local MAX_DT = 0.05
+
+local FOV_COS = cos(config.vision_angle * 0.5)
+local FOV_COS2 = FOV_COS * FOV_COS
+
+local SEP_R = config.separation.radius
+local ALI_R = config.alignment.radius
+local COH_R = config.cohesion.radius
+
+local SEP_R2 = SEP_R * SEP_R
+local ALI_R2 = ALI_R * ALI_R
+local COH_R2 = COH_R * COH_R
+
+local SEP_STRENGTH = config.separation.strength
+local ALI_STRENGTH = config.alignment.strength
+local COH_STRENGTH = config.cohesion.strength
+
+local function angle_diff(target, current)
+    return (target - current + pi) % TWO_PI - pi
+end
+
+local function visible(dx, dy, d2, fx, fy)
+    local dot = dx * fx + dy * fy
+
+    if FOV_COS >= 0 then
+        if dot < 0 then
+            return false
+        end
+        return dot * dot >= FOV_COS2 * d2
+    else
+        if dot >= 0 then
+            return true
+        end
+        return dot * dot <= FOV_COS2 * d2
+    end
+end
+
 function bird:init(id, coords, rot, boids)
     self.id = id
     self.coords = coords
     self.rot = rot
     self.boids = boids
+
+    self.px = coords.x
+    self.py = coords.y
+    self.pr = rot
 end
 
-function bird:update()
-    self:separation()
-    self:alignment()
-    self:cohesion()
-    self:move()
+function bird:snapshot()
+    self.px = self.coords.x
+    self.py = self.coords.y
+    self.pr = self.rot
 end
 
-function bird:inFieldOfView(other)
-    local dx = other.coords.x - self.coords.x
-    local dy = -(other.coords.y - self.coords.y)
-    local angle = math.atan(dy, dx)
+function bird:update(dt)
+    if dt == nil or dt ~= dt or dt < 0 then
+        dt = 0
+    elseif dt > MAX_DT then
+        dt = MAX_DT
+    end
 
-    local diff = (angle - self.rot + math.pi) % (2 * math.pi) - math.pi
-    return math.abs(diff) <= config.vision_angle / 2
-end
+    local x = self.px
+    local y = self.py
+    local rot = self.pr
 
-function bird:BirdsinRange(min, max)
-    local result = {}
-    for _, other in ipairs(self.boids) do
+    local boids = self.boids
+    local count = #boids
+
+    local fx = cos(rot)
+    local fy = sin(rot)
+
+    local sepX, sepY = 0, 0
+    local aliX, aliY = 0, 0
+    local cohX, cohY = 0, 0
+
+    local sepN, aliN, cohN = 0, 0, 0
+
+    for i = 1, count do
+        local other = boids[i]
         if other ~= self then
-            local dist = self.coords:dist(other.coords)
-            if dist > min and dist < max and self:inFieldOfView(other) then
-                result[#result + 1] = other
+            local dx = other.px - x
+            local screenDy = other.py - y
+            local d2 = dx * dx + screenDy * screenDy
+
+            if d2 > 0 and d2 < COH_R2 then
+                local dy = -screenDy
+
+                if visible(dx, dy, d2, fx, fy) then
+                    if d2 < SEP_R2 then
+                        sepX = sepX - dx
+                        sepY = sepY - dy
+                        sepN = sepN + 1
+                    end
+
+                    if d2 < ALI_R2 then
+                        aliX = aliX + cos(other.pr)
+                        aliY = aliY + sin(other.pr)
+                        aliN = aliN + 1
+                    end
+
+                    cohX = cohX + dx
+                    cohY = cohY + dy
+                    cohN = cohN + 1
+                end
             end
         end
     end
-    return result
-end
 
-function bird:steerTowards(target, strength)
-    local diff = (target - self.rot + math.pi) % (2 * math.pi) - math.pi
-    self.rot = self.rot + diff * strength
-end
+    local frameScale = dt * 60
 
-function bird:cohesion()
-    local neighbors = self:BirdsinRange(0, config.cohesion.radius)
-    if #neighbors == 0 then return end
-
-    local cx, cy = 0, 0
-    for _, other in ipairs(neighbors) do
-        cx = cx + other.coords.x
-        cy = cy + other.coords.y
-    end
-    cx, cy = cx / #neighbors, cy / #neighbors
-
-    local target = math.atan(-(cy - self.coords.y), cx - self.coords.x)
-    self:steerTowards(target, config.cohesion.strength)
-end
-
-function bird:alignment()
-    local neighbors = self:BirdsinRange(0, config.alignment.radius)
-    if #neighbors == 0 then return end
-
-    local sx, sy = 0, 0
-    for _, other in ipairs(neighbors) do
-        sx = sx + math.cos(other.rot)
-        sy = sy + math.sin(other.rot)
+    if sepN > 0 and (sepX ~= 0 or sepY ~= 0) then
+        local target = atan(-sepY, sepX)
+        rot = rot + angle_diff(target, rot)
+            * SEP_STRENGTH * frameScale
     end
 
-    self:steerTowards(math.atan(sy, sx), config.alignment.strength)
-end
-
-function bird:separation()
-    local neighbors = self:BirdsinRange(0, config.separation.radius)
-    if #neighbors == 0 then return end
-
-    local rx, ry = 0, 0
-    for _, other in ipairs(neighbors) do
-        local dx = self.coords.x - other.coords.x
-        local dy = self.coords.y - other.coords.y
-        local d2 = dx * dx + dy * dy
-        if d2 > 0 then
-            rx = rx + dx / d2
-            ry = ry + dy / d2
-        end
+    if aliN > 0 and (aliX ~= 0 or aliY ~= 0) then
+        local target = atan(aliY, aliX)
+        rot = rot + angle_diff(target, rot) * ALI_STRENGTH * frameScale
     end
-    if rx == 0 and ry == 0 then return end
 
-    local target = math.atan(-ry, rx)
-    self:steerTowards(target, config.separation.strength)
+    if cohN > 0 and (cohX ~= 0 or cohY ~= 0) then
+        local target = atan(cohY, cohX)
+        rot = rot + angle_diff(target, rot) * COH_STRENGTH * frameScale
+    end
+
+    self.rot = rot
+
+    local nx = x + cos(rot) * MOVE_SPEED * dt
+    local ny = y - sin(rot) * MOVE_SPEED * dt
+
+    local width = d3gl.width
+    local height = d3gl.height
+
+    if nx >= width then
+        nx = nx - width
+    elseif nx < 0 then
+        nx = nx + width
+    end
+
+    if ny >= height then
+        ny = ny - height
+    elseif ny < 0 then
+        ny = ny + height
+    end
+
+    self.coords.x = nx
+    self.coords.y = ny
 end
 
-function bird:move()
-    self.coords.x = (self.coords.x + math.cos(self.rot)) % d3gl.width
-    self.coords.y = (self.coords.y - math.sin(self.rot)) % d3gl.height
-end
-
-function bird:calc_triangle(x, y, b, h, a)
-  a = a or 0
-  local c, s = math.cos(a), math.sin(a)
-  local function rot(dx, dy)
-    return x + dx*c - dy*s, y + dx*s + dy*c
-  end
-  local x1, y1 = rot(0,     -2*h/3)
-  local x2, y2 = rot(-b/2,   h/3)
-  local x3, y3 = rot( b/2,   h/3)
-  return x1, y1, x2, y2, x3, y3
-end
 
 function bird:draw()
-    local x1, y1, x2, y2, x3, y3 = self:calc_triangle(
-        self.coords.x, self.coords.y, 5, 10, math.pi / 2 - self.rot)
-    d3gl.draw_triangle(x1, y1, x2, y2, x3, y3, Colors.WHITE, Colors.WHITE)
+    local function drawTriangle(x, y, rot, color)
+        local a = HALF_PI - rot
+        local c, s = cos(a), sin(a)
+
+        local x1 = x + (20 / 3) * s
+        local y1 = y - (20 / 3) * c
+
+        local x2 = x - 2.5 * c - (10 / 3) * s
+        local y2 = y - 2.5 * s + (10 / 3) * c
+
+        local x3 = x + 2.5 * c - (10 / 3) * s
+        local y3 = y + 2.5 * s + (10 / 3) * c
+
+        d3gl.draw_triangle(
+            x1, y1, x2, y2, x3, y3,
+            color, color
+        )
+    end
+
+    -- erase tracks
+    if self.drawn then
+        drawTriangle(self.lastX, self.lastY, self.lastRot, d3gl.hex("#0b1020"))
+    end
+
+    -- draw bird
+    drawTriangle(self.coords.x, self.coords.y, self.rot, Colors.WHITE)
+
+    self.lastX = self.coords.x
+    self.lastY = self.coords.y
+    self.lastRot = self.rot
+    self.drawn = true
 end
+
 
 return bird

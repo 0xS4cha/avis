@@ -1,5 +1,5 @@
 return {
-    boids = 70,
+    boids = 50, -- smooth refresh rate at this amount
     vision_angle = math.pi * 3 / 2,
     separation = {
         strength = 0.08,
